@@ -1,11 +1,18 @@
 [package]
 name = "expansion"
 description = "expant the native libs"
-version = "0.0.0"
+version = "0.0.1"
 authors = ["sanmu <hdy9515@dingtalk.com>"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+#[lib]
+#proc-macro = true
+
 [dependencies]
+proc-macro2 = "1.0"
+# 添加extra-traits支持Debug打印结构体
+syn = { version = "1.0", features = ["extra-traits", "full"]}
+quote = "1.0"

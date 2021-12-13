@@ -1,4 +1,6 @@
-mod string;
+pub mod helpers;
+pub mod string;
+
 pub mod prelude;
 
 
