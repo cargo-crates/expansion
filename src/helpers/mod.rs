@@ -39,21 +39,26 @@ pub fn parse_attrs_to_metas(attrs: &Vec<syn::Attribute>) -> syn::Result<Vec<syn:
     attrs.iter().map(|attr| attr.parse_meta()).collect::<syn::Result<Vec<syn::Meta>>>()
 }
 
-pub fn get_macro_nested_attr_value_ident(nested_metas: Vec<&syn::NestedMeta>, attr_name: &str, namespaces: Option<Vec<&str>>, allow_attrs: Option<Vec<&str>>) -> syn::Result<Option<syn::Ident>> {
+pub fn get_macro_nested_attr_value_ident(nested_metas: Vec<&syn::NestedMeta>, attr_name: &str, namespaces: Option<Vec<&str>>, namespace_allow_attrs: Option<Vec<&str>>) -> syn::Result<Option<syn::Ident>> {
     match namespaces {
         Some(namespaces) => {
             if namespaces.len() != 0 {
                 let metas = nested_metas.iter().filter_map(|item| {
                     if let syn::NestedMeta::Meta(meta) = item { Some(meta) } else { None }
                 }).collect::<Vec<_>>();
-                if let Some(ident) = get_macro_attr_value_ident(metas, attr_name, Some(namespaces), allow_attrs)? {
+                if let Some(ident) = get_macro_attr_value_ident(metas, attr_name, Some(namespaces), namespace_allow_attrs)? {
                     return Ok(Some(ident))
                 }
             } else {
+                // 校验每个属性是否有拼错或者不支持
                 for nested_meta in nested_metas.iter() {
                     if let syn::NestedMeta::Meta(meta) = nested_meta {
-                        let allow_attrs = if let Some(allow_attrs) = &allow_attrs { Some(allow_attrs.iter().map(|&i| i).collect()) } else { None };
-                        if let Some(ident) = get_macro_attr_value_from_meta(meta, attr_name, allow_attrs)? {
+                        check_meta_available(meta, &namespace_allow_attrs)?;
+                    }
+                }
+                for nested_meta in nested_metas.iter() {
+                    if let syn::NestedMeta::Meta(meta) = nested_meta {
+                        if let Some(ident) = get_macro_attr_value_from_meta(meta, attr_name)? {
                             return Ok(Some(ident))
                         }
                     }
@@ -61,7 +66,7 @@ pub fn get_macro_nested_attr_value_ident(nested_metas: Vec<&syn::NestedMeta>, at
             }
         },
         None => {
-            return get_macro_nested_attr_value_ident(nested_metas, attr_name, Some(vec![]), allow_attrs);
+            return get_macro_nested_attr_value_ident(nested_metas, attr_name, Some(vec![]), namespace_allow_attrs);
         },
     }
     Ok(None)
@@ -72,8 +77,9 @@ pub fn get_macro_attr_value_ident(metas: Vec<&syn::Meta>, attr_name: &str, names
             // eg: #[arel="users"]
             if namespaces.len() == 0 {
                 for meta in metas {
-                    let namespace_allow_attrs = if let Some(namespace_allow_attrs) = &namespace_allow_attrs { Some(namespace_allow_attrs.iter().map(|&i| i).collect()) } else { None };
-                    if let Some(ident) = get_macro_attr_value_from_meta(&meta, attr_name, namespace_allow_attrs)? {
+                    // 校验属性是否有拼错或者不支持
+                    check_meta_available(meta, &namespace_allow_attrs)?;
+                    if let Some(ident) = get_macro_attr_value_from_meta(&meta, attr_name)? {
                         return Ok(Some(ident))
                     }
                 }
@@ -102,17 +108,26 @@ pub fn get_macro_attr_value_ident(metas: Vec<&syn::Meta>, attr_name: &str, names
     Ok(None)
 }
 
-fn get_macro_attr_value_from_meta(meta: &syn::Meta, attr_name: &str, allow_attrs: Option<Vec<&str>>) -> syn::Result<Option<syn::Ident>> {
-    if let syn::Meta::NameValue(kv) = meta {
-        if let syn::Lit::Str(ref ident_str) = kv.lit {
-            // 校验
-            if let Some(allow_attrs) = &allow_attrs {
-                for attr_name in allow_attrs {
-                    if !kv.path.is_ident(attr_name) {
-                        return Err(syn::Error::new_spanned(&kv.path, format!("Support Macro Attr List: {:?}", &allow_attrs)));
-                    }
+fn check_meta_available(meta: &syn::Meta, allow_attrs: &Option<Vec<&str>>) -> syn::Result<bool> {
+    if let Some(allow_attrs) = allow_attrs {
+        if let syn::Meta::NameValue(kv) = meta {
+            let mut can_kv_path_allow = false;
+            for attr_name in allow_attrs {
+                if kv.path.is_ident(attr_name) {
+                    can_kv_path_allow = true;
                 }
             }
+            if !can_kv_path_allow {
+                return Err(syn::Error::new_spanned(&kv.path, format!("Support Macro Attr List: {:?}", &allow_attrs)));
+            }
+        }
+    }
+    Ok(true)
+}
+
+fn get_macro_attr_value_from_meta(meta: &syn::Meta, attr_name: &str) -> syn::Result<Option<syn::Ident>> {
+    if let syn::Meta::NameValue(kv) = meta {
+        if let syn::Lit::Str(ref ident_str) = kv.lit {
             if kv.path.is_ident(attr_name) {
                 return Ok(Some(syn::Ident::new(ident_str.value().as_str(), kv.span())));
             }
